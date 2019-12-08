@@ -1,0 +1,15 @@
+{
+    "listeners": {
+        "*:8000": {
+            "pass": "applications/phpinfo"
+        }
+    },
+    "applications": {
+        "phpinfo": {
+            "type": "php",
+            "processes": 2,
+            "root": "/app",
+            "script": "i.php"
+        }
+    }
+}

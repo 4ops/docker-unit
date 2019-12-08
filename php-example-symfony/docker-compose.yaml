@@ -1,0 +1,63 @@
+version: '3.4'
+
+services:
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: app
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app_password
+    networks:
+      - data
+    volumes:
+      - "db-data:/var/lib/mysql:z"
+    restart: 'no'
+
+  create-db:
+    image: demo-app-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      APP_ENV: 'dev'
+    command: ["sh", "/usr/bin/wait-create.sh"]
+    volumes:
+      - "$PWD/docker/wait-create.sh:/usr/bin/wait-create.sh:ro"
+    networks:
+      - data
+    depends_on:
+      - app
+      - mysql
+    restart: 'no'
+
+  app:
+    image: demo-app-prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    environment:
+      APP_ENV: 'prod'
+    networks:
+      - data
+      - web
+    ports:
+      - '127.0.0.1:80:8000'
+    depends_on:
+      - mysql
+    volumes:
+      - "app-log:/app/var/log:z"
+      - "app-cache:/app/var/cache:z"
+    restart: 'no'
+
+networks:
+  data:
+    internal: true
+  web:
+
+volumes:
+  app-log:
+  app-cache:
+  db-data:

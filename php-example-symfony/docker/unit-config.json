@@ -1,0 +1,42 @@
+{
+    "listeners": {
+        "*:8000": {
+            "pass": "routes"
+        }
+    },
+    "routes": [
+        {
+            "match": {
+                "uri": [
+                    "*.htm",
+                    "*.html",
+                    "*.css",
+                    "*.ico",
+                    "*.jpg",
+                    "*.js",
+                    "*.png",
+                    "*.ttf",
+                    "*.woff",
+                    "*.woff2",
+                    "*.xml"
+                ]
+            },
+            "action": {
+                "share": "/app/public"
+            }
+        },
+        {
+            "action": {
+                "pass": "applications/symfony"
+            }
+        }
+    ],
+    "applications": {
+        "symfony": {
+            "type": "php",
+            "processes": 2,
+            "root": "/app/public",
+            "script": "index.php"
+        }
+    }
+}
