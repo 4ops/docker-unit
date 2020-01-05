@@ -46,7 +46,7 @@ RUN set -ex \
 #
 FROM php:7.3-alpine AS sources
 
-ENV UNIT_VERSION "1.13.0"
+ENV UNIT_VERSION "1.14.0"
 
 RUN docker-php-source extract
 RUN apk add --no-cache --quiet \
