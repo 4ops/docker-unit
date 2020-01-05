@@ -305,6 +305,183 @@ RUN set -ex \
           --strip-all '{}' + \
           || true            \
   ; rm -rf "${INSTALL_DIR}/usr/share/man"
+
+#
+# --- PHP Debug
+#
+FROM php-builder AS php-debug
+
+ENV XDEBUG_VERSION="2.9.0"
+
+WORKDIR /usr/src/php
+
+ENV INSTALL_DIR=
+ENV INSTALL_ROOT=
+ENV DESTDIR=
+
+ENV HIDE_WARN "-Wno-deprecated -Wno-deprecated-declarations"
+ENV ADD_LFS   "-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
+ENV LDFLAGS   "-Wl,-O1 -Wl,--hash-style=gnu -pie"
+ENV CPPFLAGS  "${HIDE_WARN} -fstack-protector-strong -fpic -fpie -O2 ${ADD_LFS}"
+ENV HIDE_C_W  "-Wno-stringop-overflow -Wno-discarded-qualifiers -Wno-incompatible-pointer-types"
+ENV CFLAGS    "${HIDE_C_W} ${CPPFLAGS}"
+
+RUN ./configure \
+                --enable-option-checking=fatal                      \
+                \
+                --build="x86_64-linux-musl"                         \
+                --prefix=/usr                                       \
+                --sysconfdir="${PHP_INI_DIR}"                       \
+                --with-config-file-path="${PHP_INI_DIR}"            \
+                --with-config-file-scan-dir="${PHP_INI_DIR}/conf.d" \
+                --localstatedir=/var                                \
+                --with-layout=GNU                                   \
+                --with-gnu-ld                                       \
+                --with-pic                                          \
+                \
+                --disable-short-tags                                \
+                --disable-cgi                                       \
+                \
+                --enable-embed=shared                               \
+                --enable-dba=shared                                 \
+                --enable-bcmath=shared                              \
+                --enable-calendar=shared                            \
+                --enable-ctype                                      \
+                --enable-dom=shared                                 \
+                --enable-exif=shared                                \
+                --enable-ftp=shared                                 \
+                --enable-intl=shared                                \
+                --enable-json                                       \
+                --enable-libxml                                     \
+                --enable-opcache=shared                             \
+                --enable-mbstring                                   \
+                --enable-mysqlnd                                    \
+                --enable-pcntl=shared                               \
+                --enable-pdo=shared                                 \
+                --enable-phar=shared                                \
+                --enable-phpdbg=shared                              \
+                --enable-phpdbg-webhelper=shared                    \
+                --enable-posix                                      \
+                --enable-session                                    \
+                --enable-shmop=shared                               \
+                --enable-simplexml                                  \
+                --enable-soap=shared                                \
+                --enable-sockets=shared                             \
+                --enable-sysvmsg                                    \
+                --enable-sysvsem                                    \
+                --enable-sysvshm                                    \
+                --enable-tokenizer                                  \
+                --enable-xml=shared                                 \
+                --enable-xmlreader=shared                           \
+                --enable-xmlwriter=shared                           \
+                --enable-zip=shared                                 \
+                \
+                --with-bz2=shared                                   \
+                --with-curl                                         \
+                --with-enchant=/usr                                 \
+                --with-gd=shared                                    \
+                --with-gettext=shared                               \
+                --with-iconv                                        \
+                --with-icu-dir=/usr                                 \
+                --with-jpeg-dir=/usr                                \
+                --with-kerberos                                     \
+                --with-libxml-dir=/usr                              \
+                --with-libzip=/usr                                  \
+                --with-openssl                                      \
+                --with-password-argon2                              \
+                --with-pcre-regex                                   \
+                --with-pdo-mysql=shared,mysqlnd                     \
+                --with-pdo-pgsql=shared                             \
+                --with-pear=shared                                  \
+                --with-pgsql=shared                                 \
+                --with-png-dir=/usr                                 \
+                --with-pspell=shared                                \
+                --with-recode=shared                                \
+                --with-sodium=/usr                                  \
+                --with-system-ciphers                               \
+                --with-tidy=shared                                  \
+                --with-webp-dir=/usr                                \
+                --with-xmlrpc=shared                                \
+                --with-xsl=shared                                   \
+                --with-zlib                                         \
+                \
+                --without-pdo-sqlite                                \
+  > /dev/null;
+
+RUN make -j "$(nproc)" > /dev/null
+
+RUN mkdir -p "${PHP_SCANDIR}"
+RUN cp php.ini-* "${PHP_INI_DIR}"
+RUN make install
+
+RUN git clone https://github.com/xdebug/xdebug.git /usr/src/xdebug
+
+WORKDIR /usr/src/xdebug
+
+RUN git checkout "$XDEBUG_VERSION"
+RUN set -ex \
+  ; phpize \
+  ; ./configure --enable-xdebug > /dev/null \
+  ; make clean
+RUN make -j "$(nproc)" > /dev/null
+RUN make install
+
+WORKDIR /usr/src/unit
+
+ENV HIDE_WARN=
+ENV ADD_LFS=
+ENV LDFLAGS=
+ENV CPPFLAGS=
+ENV HIDE_C_W=
+ENV CFLAGS=
+
+RUN ./configure \
+                --group=app                     \
+                --user=app                      \
+                --prefix=/usr                   \
+                --modules=/usr/lib/unit/modules \
+                --pid=unit.pid                  \
+                --log=unit.log                  \
+                --state=/var/lib/unit           \
+                --control=[::]:8001             \
+                --openssl                       \
+  > /dev/null
+
+RUN ./configure php \
+                --module=php                    \
+                --config=/usr/bin/php-config    \
+                --lib-path=/usr/lib             \
+  > /dev/null
+
+RUN make -j "$(nproc)" > /dev/null
+RUN make install
+
+RUN rm -rf /install
+
+WORKDIR /app
+
+EXPOSE 8001
+
+#
+# --- Test
+#
+FROM php-debug AS test-php-debug-modules
+
+ENV PHP_EXT_DIR "/usr/lib/php/20170718"
+ENV TARGET_INI  "/etc/php/conf.d/extensions.ini"
+
+RUN set -eu \
+  ; echo "zend_extension=$PHP_EXT_DIR/opcache.so" > "$TARGET_INI"      \
+  ; echo "zend_extension=$PHP_EXT_DIR/xdebug.so" >> "$TARGET_INI"      \
+  ; for extension in $( ls "$PHP_EXT_DIR/"*.so | grep -v opcache | grep -v xdebug); do \
+        echo "extension=$extension" >> "$TARGET_INI";                  \
+    done
+
+USER app
+
+RUN cat "$TARGET_INI"
+RUN php -m
+
 #
 # --- Base
 #
